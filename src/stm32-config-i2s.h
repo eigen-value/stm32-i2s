@@ -28,7 +28,7 @@
 
 #endif
 
-#ifdef ARDUINO_GENERIC_F411VETX
+#if defined(ARDUINO_GENERIC_F411VETX) || defined(ARDUINO_DISCO_F411VE)
   #define SPI_INSTANCE_FOR_I2S SPI3
   #define STM_I2S_PINS \
     { \
@@ -38,11 +38,38 @@
       {data_out, PC_12, GPIO_AF6_SPI3},\
       {data_in, PC_3, GPIO_AF6_SPI3}\
     };
-// 8 MHz / M * N / R  => I2S Freq
+// This board never enables HSE (confirmed via RCC_CR: HSEON=0/HSERDY=0) - the
+// main PLL runs off the internal 16MHz HSI (RCC_PLLCFGR.PLLSRC=0), and
+// PLLI2S shares that same source. HSI/PLLM*PLLN/PLLR => I2SxCLK, further
+// divided by the I2SDIV/ODD prescaler (computed by HAL to best match the
+// requested sample rate) to get Fs.
+// These are the fallback/default values used for the 44.1kHz family
+// (44100/22050/11025) - see Stm32I2sClass::getPLLI2S() in stm32-i2s.h, which
+// picks a different, per-rate-tuned PLLM/N/R for the 48kHz family
+// (8000/16000/32000/48000/96000/192000) since a single fixed setting can
+// only ever be exact for one specific rate. PLLM=16 (not 8) is required
+// here specifically because the reference is 16MHz, not 8MHz: with PLLM=8
+// the PLLI2S VCO output hits 858MHz, nearly double the STM32F411's 432MHz
+// maximum - an out-of-spec, jittery PLL that produces noise instead of a
+// clean tone even though the average divided-down frequency looks correct
+// on paper.
   #define PLLM   16
-  #define PLLN   100
+  #define PLLN  429
   #define PLLR    2
   #define IS_F4
+
+// Empirically measured on THIS board only (via a monotonic frame counter
+// sampled over a precisely-timed multi-second window): the real I2S output
+// rate is consistently ~4x the requested Init.AudioFreq, even though
+// i2sclk, Init.AudioFreq and the resulting I2SDIV/ODD were all
+// independently confirmed correct via live register/variable inspection
+// inside HAL_I2S_Init() itself - the discrepancy could not be traced to
+// any specific HAL computation. Confirmed at two different target rates
+// (11025 and 44100), each landing within ~1% of the true intended
+// frequency once divided by 4. Not validated on any other board/chip -
+// keep this scoped to ARDUINO_GENERIC_F411VETX specifically rather than
+// applying it to every STM_I2S_PINS board.
+  #define I2S_AUDIOFREQ_CORRECTION_DIV 4
 
 #endif
 

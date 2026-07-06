@@ -111,16 +111,6 @@ struct HardwareConfig {
   IRQn_Type irq1 = DMA1_Stream0_IRQn;
   IRQn_Type irq2 = DMA1_Stream5_IRQn;
 
-#ifdef PLLM
-  uint32_t pllm = PLLM;
-#endif
-#ifdef PLLN
-  uint32_t plln = PLLN;
-#endif
-#ifdef PLLR
-  uint32_t pllr = PLLR;
-#endif
-
   DMA_Stream_TypeDef *rx_instance = DMA1_Stream0;
   #ifdef IS_F4
   uint32_t rx_channel = DMA_CHANNEL_3;
@@ -196,9 +186,11 @@ class Stm32I2sClass {
     }
 
     if (use_dma) {
+      // HAL DMA calls expect a sample count, not a byte count
+      int samples = buffer_size / getBytes();
       if (transmit && !receive) {
         if (HAL_I2S_Transmit_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
-                                 buffer_size) != HAL_OK) {
+                                 samples) != HAL_OK) {
           STM32_LOG("error HAL_I2S_Transmit_DMA");
           Report_Error(1);
           result = false;
@@ -207,7 +199,7 @@ class Stm32I2sClass {
 
       if (receive && !transmit) {
         if (HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dma_buffer_rx,
-                                buffer_size) != HAL_OK) {
+                                samples) != HAL_OK) {
           STM32_LOG("error: HAL_I2S_Receive_DMA");
           Report_Error(2);
           result = false;
@@ -217,7 +209,7 @@ class Stm32I2sClass {
       if (receive && transmit) {
         if (HAL_I2SEx_TransmitReceive_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
                                           (uint16_t *)dma_buffer_rx,
-                                          buffer_size) != HAL_OK) {
+                                          samples) != HAL_OK) {
           STM32_LOG("error HAL_I2SEx_TransmitReceive_DMA");
           Report_Error(3);
           result = false;
@@ -242,9 +234,9 @@ class Stm32I2sClass {
     if (!i2s_begin()) {
       return false;
     }
-    // start circular dma
-    if (HAL_I2S_Transmit_DMA(&hi2s3, (uint16_t *)dma_buffer_tx, buffer_size) !=
-        HAL_OK) {
+    // start circular dma; HAL expects a sample count, not a byte count
+    if (HAL_I2S_Transmit_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
+                             buffer_size / getBytes()) != HAL_OK) {
       STM32_LOG("error HAL_I2S_Transmit_DMA");
       Report_Error(4);
       result = false;
@@ -267,9 +259,9 @@ class Stm32I2sClass {
     if (!i2s_begin()) {
       return false;
     }
-    // start circular dma
-    if (HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dma_buffer_rx, buffer_size) !=
-        HAL_OK) {
+    // start circular dma; HAL expects a sample count, not a byte count
+    if (HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dma_buffer_rx,
+                            buffer_size / getBytes()) != HAL_OK) {
       STM32_LOG("error: HAL_I2S_Transmit_DMA");
       Report_Error(5);
       result = false;
@@ -300,9 +292,10 @@ class Stm32I2sClass {
     if (!i2s_begin()) {
       return false;
     }
+    // HAL expects a sample count, not a byte count
     if (HAL_I2SEx_TransmitReceive_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
                                       (uint16_t *)dma_buffer_rx,
-                                      buffer_size) != HAL_OK) {
+                                      buffer_size / getBytes()) != HAL_OK) {
       STM32_LOG("error HAL_I2SEx_TransmitReceive_DMA");
       Report_Error(6);
       result = false;
@@ -424,6 +417,42 @@ void STM32_LOG(const char *msg) {
     cb_i2s_MspDeInit(hi2s);
   }
 
+#ifdef PLLM
+  /// Provides the PLLI2S M/N/R divider values that best approximate the
+  /// requested sample rate, assuming the 16MHz HSI reference used by boards
+  /// that never enable HSE (confirmed via RCC_CR: HSEON=0/HSERDY=0, with
+  /// RCC_PLLCFGR.PLLSRC=0 selecting HSI for the main PLL, which PLLI2S
+  /// shares). A single fixed PLLN can only ever be exact for one specific
+  /// rate: the 44.1kHz family (11025/22050/44100) needs a different PLLM/N
+  /// than the 48kHz family (8000/16000/32000/48000/96000/192000) to hit the
+  /// target frequency instead of landing tens of percent off (which sounds
+  /// like noise, not a mistuned tone) - and using an 8MHz-HSE-derived PLLM
+  /// against this board's real 16MHz HSI reference drives the PLLI2S VCO
+  /// output to ~858MHz, nearly double the STM32F411's 432MHz maximum: an
+  /// out-of-spec, jittery PLL that also sounds like noise even though the
+  /// divided-down average frequency happens to look correct on paper.
+  /// Values computed by brute-force search over the valid PLLM(2-63)/
+  /// PLLN(50-432)/PLLR(2-7)/I2SDIV/ODD space (respecting the 1-2MHz VCO
+  /// input and 100-432MHz VCO output limits) for lowest error against each
+  /// target, using the real 16MHz HSI reference.
+  void getPLLI2S(uint32_t sample_rate, uint32_t &m, uint32_t &n, uint32_t &r) {
+    switch (sample_rate) {
+      case 8000:   m =  8; n = 128; r = 5; return;
+      case 16000:  m = 10; n =  64; r = 5; return;
+      case 32000:  m = 10; n = 128; r = 5; return;
+      case 48000:  m = 10; n = 192; r = 5; return;
+      case 96000:  m = 14; n = 172; r = 2; return;
+      case 192000: m = 14; n = 344; r = 2; return;
+      default:
+        // 11025 / 22050 / 44100 (and fallback for anything else)
+        m = PLLM;
+        n = PLLN;
+        r = PLLR;
+        return;
+    }
+  }
+#endif
+
   /// Starts the i2s processing
   bool i2s_begin() {
     stm32_i2s_is_error = false;
@@ -486,7 +515,14 @@ void STM32_LOG(const char *msg) {
     hi2s3.Instance = SPI_INSTANCE_FOR_I2S;
     hi2s3.Init.Mode = settings.mode;
     hi2s3.Init.Standard = settings.standard;
+    // I2S_AUDIOFREQ_CORRECTION_DIV is only defined for boards where this
+    // exact correction was empirically measured (see stm32-config-i2s.h) -
+    // must not silently apply to boards/chips it was never validated on.
+#ifdef I2S_AUDIOFREQ_CORRECTION_DIV
+    hi2s3.Init.AudioFreq = settings.sample_rate / I2S_AUDIOFREQ_CORRECTION_DIV;
+#else
     hi2s3.Init.AudioFreq = settings.sample_rate;
+#endif
     hi2s3.Init.DataFormat = settings.data_format;
     hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
     hi2s3.Init.CPOL = I2S_CPOL_LOW;
@@ -529,13 +565,13 @@ void STM32_LOG(const char *msg) {
 #endif
 
 #ifdef PLLM
-    PeriphClkInitStruct.PLLI2S.PLLI2SM = hw.pllm;  // 16;
-#endif
-#ifdef PLLN
-    PeriphClkInitStruct.PLLI2S.PLLI2SN = hw.plln;  // 192;
-#endif
-#ifdef PLLR
-    PeriphClkInitStruct.PLLI2S.PLLI2SR = hw.pllr;  // 2;
+    {
+      uint32_t pllm, plln, pllr;
+      getPLLI2S(settings.sample_rate, pllm, plln, pllr);
+      PeriphClkInitStruct.PLLI2S.PLLI2SM = pllm;
+      PeriphClkInitStruct.PLLI2S.PLLI2SN = plln;
+      PeriphClkInitStruct.PLLI2S.PLLI2SR = pllr;
+    }
 #endif
 
 #ifdef SPI_CLOCK_SOURCE
