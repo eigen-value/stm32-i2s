@@ -28,6 +28,13 @@
 #  include "stm32f4xx_hal.h"
 #endif
 
+// Full-duplex (simultaneous tx+rx on one I2S instance) needs the I2Sxext
+// peripheral, which F4 and H7 have and F7 (e.g. F723) does not - HAL_I2SEx_
+// TransmitReceive_DMA isn't even declared without it.
+#if defined(IS_F4) || defined(IS_H7)
+#define I2S_HAS_FULLDUPLEX_EXT
+#endif
+
 #ifdef STM_I2S_PINS
 
 
@@ -207,6 +214,7 @@ class Stm32I2sClass {
       }
 
       if (receive && transmit) {
+#ifdef I2S_HAS_FULLDUPLEX_EXT
         if (HAL_I2SEx_TransmitReceive_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
                                           (uint16_t *)dma_buffer_rx,
                                           samples) != HAL_OK) {
@@ -214,6 +222,10 @@ class Stm32I2sClass {
           Report_Error(3);
           result = false;
         }
+#else
+        STM32_LOG("error: full-duplex I2S (simultaneous tx+rx) is not supported on this MCU");
+        result = false;
+#endif
       }
     }
 
@@ -293,6 +305,7 @@ class Stm32I2sClass {
       return false;
     }
     // HAL expects a sample count, not a byte count
+#ifdef I2S_HAS_FULLDUPLEX_EXT
     if (HAL_I2SEx_TransmitReceive_DMA(&hi2s3, (uint16_t *)dma_buffer_tx,
                                       (uint16_t *)dma_buffer_rx,
                                       buffer_size / getBytes()) != HAL_OK) {
@@ -300,6 +313,10 @@ class Stm32I2sClass {
       Report_Error(6);
       result = false;
     }
+#else
+    STM32_LOG("error: full-duplex I2S (simultaneous tx+rx) is not supported on this MCU");
+    result = false;
+#endif
     return result;
   }
 
@@ -556,12 +573,15 @@ void STM32_LOG(const char *msg) {
 #ifdef IS_F4
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
 #endif
+#ifdef IS_F7
+    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+#endif
 #ifdef IS_H7
-    if (hi2s->Instance == SPI1) 
+    if (hi2s->Instance == SPI1)
       PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_SPI1;
-    if (hi2s->Instance == SPI2) 
+    if (hi2s->Instance == SPI2)
       PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_SPI2;
-    if (hi2s->Instance == SPI3) 
+    if (hi2s->Instance == SPI3)
 #endif
 
 #ifdef PLLM
@@ -572,6 +592,12 @@ void STM32_LOG(const char *msg) {
       PeriphClkInitStruct.PLLI2S.PLLI2SN = plln;
       PeriphClkInitStruct.PLLI2S.PLLI2SR = pllr;
     }
+#endif
+#ifdef IS_F7
+    // F7's PLLI2S has no M divider (shared with the main PLL) - only N/R
+    // are ours to set, see PLLN/PLLR in stm32-config-i2s.h.
+    PeriphClkInitStruct.PLLI2S.PLLI2SN = PLLN;
+    PeriphClkInitStruct.PLLI2S.PLLI2SR = PLLR;
 #endif
 
 #ifdef SPI_CLOCK_SOURCE

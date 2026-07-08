@@ -99,6 +99,11 @@
   #define IS_H7
 #endif
 
+#ifdef STM32WB55xx
+// STM32WB55xx do not provide SPI based I2S, so we cannot use I2S on this platform.
+// They require the SAI/I2S API!
+#endif
+
 #ifdef STM32F723xx
   #define SPI_INSTANCE_FOR_I2S SPI3
   #define STM_I2S_PINS \
@@ -110,5 +115,13 @@
       {data_in, PC_11, GPIO_AF6_SPI3}\
     };
   #define IS_F7
-  #define SPI_CLOCK_SOURCE LL_RCC_SPI123_CLKSOURCE_PLL1Q
+// Unlike F4, F7's RCC_PLLI2SInitTypeDef has no PLLI2SM field - PLLI2S shares
+// the main PLL's M divider (set to 8 by DISCO_F723IE's SystemClock_Config(),
+// off the 16MHz HSI), giving a 2MHz PLLI2S VCO input. PLLN=192/PLLR=5 is the
+// common CubeMX default for that input (76.8MHz I2S kernel clock);
+// HAL_I2S_Init() derives the I2SDIV/ODD prescaler from Init.AudioFreq
+// against that clock, so unlike the F411 boards above a per-sample-rate-
+// tuned value isn't needed here.
+  #define PLLN 192
+  #define PLLR 5
 #endif
