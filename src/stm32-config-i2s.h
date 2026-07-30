@@ -81,25 +81,21 @@
       {bck, PB_10, GPIO_AF5_SPI2},\
       {ws, PB_12, GPIO_AF5_SPI2},\
       {data_out, PC_3, GPIO_AF5_SPI2},\
-      {data_in, PB_11, GPIO_AF5_SPI2}\
+      {data_in, PC_2, GPIO_AF6_I2S2ext}\
     };
 
   #define PLLM   16
-  #define PLLN  429  // 192
-  #define PLLR    2  // 4
+  #define PLLN  429
+  #define PLLR    2
   #define IS_F4
 
-// Empirically measured on THIS board only (via a monotonic frame counter
-// sampled over a precisely-timed multi-second window): the real I2S output
-// rate is consistently ~4x the requested Init.AudioFreq, even though
-// i2sclk, Init.AudioFreq and the resulting I2SDIV/ODD were all
-// independently confirmed correct via live register/variable inspection
-// inside HAL_I2S_Init() itself - the discrepancy could not be traced to
-// any specific HAL computation. Confirmed at two different target rates
-// (11025 and 44100), each landing within ~1% of the true intended
-// frequency once divided by 4. Not validated on any other board/chip -
-// keep this scoped to ARDUINO_GENERIC_F411VETX specifically rather than
-// applying it to every STM_I2S_PINS board.
+// Same PLLM/N/R derivation as the ARDUINO_GENERIC_F411VETX block above (16MHz
+// HSI reference, PLLM=16 to keep the PLLI2S VCO within spec). Confirmed
+// working on real ARDUINO_GENERIC_F411VCTX hardware via PR #10, using SPI2 /
+// DMA1 Stream4 instead of SPI3 / DMA1 Stream5. The correction factor was
+// carried over from the VETX board rather than independently re-measured via
+// register inspection on this board - if audio comes out at the wrong pitch,
+// re-derive it for this specific board rather than assuming it still holds.
   #define I2S_AUDIOFREQ_CORRECTION_DIV 4
 
 #endif

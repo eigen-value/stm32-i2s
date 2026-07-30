@@ -137,6 +137,12 @@ struct HardwareConfig {
 
   HardwareConfig() {
     // overwrite processor specific default settings if necessary
+#if defined(ARDUINO_GENERIC_F411VCTX)
+    // This board's SPI2_TX DMA request only exists on DMA1 Stream4, unlike
+    // the DMA1_Stream5 default used by the SPI3-based boards above.
+    irq2 = DMA1_Stream4_IRQn;
+    tx_instance = DMA1_Stream4;
+#endif
   }
 };
 
