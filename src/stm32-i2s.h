@@ -50,6 +50,7 @@ extern "C" void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s);
 extern "C" void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s);
 extern "C" void DMA1_Stream0_IRQHandler(void);
 extern "C" void DMA1_Stream5_IRQHandler(void);
+extern "C" void DMA1_Stream4_IRQHandler(void);
 extern "C" void HAL_I2S_MspInit(I2S_HandleTypeDef *hi2s);
 extern "C" void HAL_I2S_MspDeInit(I2S_HandleTypeDef *hi2s);
 extern "C" void Report_Error(int no);
@@ -167,6 +168,7 @@ extern Stm32I2sClass *self_I2S;
 class Stm32I2sClass {
   friend void DMA1_Stream0_IRQHandler(void);
   friend void DMA1_Stream5_IRQHandler(void);
+  friend void DMA1_Stream4_IRQHandler(void);
   friend void HAL_I2S_MspInit(I2S_HandleTypeDef *hi2s);
   friend void HAL_I2S_MspDeInit(I2S_HandleTypeDef *hi2s);
   friend void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s);

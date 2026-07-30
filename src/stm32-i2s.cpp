@@ -34,6 +34,11 @@ extern "C" void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s) { Report_Error(10
 extern "C" void DMA1_Stream0_IRQHandler(void) { self_I2S->cb_dmaIrqRx(); }
 
 /**
+ * @brief This function handles DMA1 stream4 global interrupt.
+ */
+extern "C" void DMA1_Stream4_IRQHandler(void) { self_I2S->cb_dmaIrqTx(); }
+
+/**
  * @brief This function handles DMA1 stream5 global interrupt.
  */
 extern "C" void DMA1_Stream5_IRQHandler(void) { self_I2S->cb_dmaIrqTx(); }
